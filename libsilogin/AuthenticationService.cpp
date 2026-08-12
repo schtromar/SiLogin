@@ -75,15 +75,15 @@ namespace
                 "The authenticated enrollment could not be reloaded.");
         }
 
-        AuthenticatedIdentity identity;
+        auto identity = std::make_unique<AuthenticatedIdentity>();
 
-        identity.accountSid =
+        identity->accountSid =
             enrollment->accountSid;
 
-        identity.accountName =
+        identity->accountName =
             enrollment->accountName;
 
-        identity.certificateThumbprint =
+        identity->certificateThumbprint =
             enrollment->certificateThumbprint;
 
         return AuthenticationResult::success(
@@ -170,7 +170,7 @@ AuthenticationService::authenticateWithCardForAccount(
 
 AuthenticationResult
 AuthenticationService::enrollRecovery(
-    const std::filesystem::path& driveRoot) noexcept
+    const std::string& driveRoot) noexcept
 {
     if (driveRoot.empty())
     {

@@ -329,7 +329,7 @@ namespace
                         0,
                         name.c_str(),
                         static_cast<int>(name.size()),
-                        utf8Name.data(),
+                        &utf8Name[0],
                         requiredBytes,
                         nullptr,
                         nullptr);

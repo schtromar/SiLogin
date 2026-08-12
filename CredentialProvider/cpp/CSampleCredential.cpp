@@ -20,7 +20,7 @@
 #include <memory>
 #include <string>
 
-CSampleCredential::CSampleCredential():
+CSampleCredential::CSampleCredential() :
     _logger(LogLevel::Debug),
     _authenticationService(_logger),
     _secondFactorVerified(false),
@@ -71,9 +71,9 @@ CSampleCredential::~CSampleCredential()
 // Initializes one credential with the field information passed in.
 // Set the value of the SFI_LARGE_TEXT field to pwzUsername.
 HRESULT CSampleCredential::Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus,
-                                      _In_ CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR const *rgcpfd,
-                                      _In_ FIELD_STATE_PAIR const *rgfsp,
-                                      _In_ ICredentialProviderUser *pcpUser)
+    _In_ CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR const* rgcpfd,
+    _In_ FIELD_STATE_PAIR const* rgfsp,
+    _In_ ICredentialProviderUser* pcpUser)
 {
     HRESULT hr = S_OK;
     _cpus = cpus;
@@ -104,7 +104,7 @@ HRESULT CSampleCredential::Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus,
     {
         hr = SHStrDupW(L"Edit Text", &_rgFieldStrings[SFI_EDIT_TEXT]);
     }
-    
+
     if (SUCCEEDED(hr))
     {
         hr = SHStrDupW(L"", &_rgFieldStrings[SFI_PASSWORD]);
@@ -150,7 +150,7 @@ HRESULT CSampleCredential::Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus,
         }
         else
         {
-            hr =  SHStrDupW(L"User Name is NULL", &_rgFieldStrings[SFI_FULLNAME_TEXT]);
+            hr = SHStrDupW(L"User Name is NULL", &_rgFieldStrings[SFI_FULLNAME_TEXT]);
         }
     }
     if (SUCCEEDED(hr) && false)
@@ -185,7 +185,7 @@ HRESULT CSampleCredential::Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus,
 }
 
 // LogonUI calls this in order to give us a callback in case we need to notify it of anything.
-HRESULT CSampleCredential::Advise(_In_ ICredentialProviderCredentialEvents *pcpce)
+HRESULT CSampleCredential::Advise(_In_ ICredentialProviderCredentialEvents* pcpce)
 {
     if (_pCredProvCredentialEvents != nullptr)
     {
@@ -211,7 +211,7 @@ HRESULT CSampleCredential::UnAdvise()
 // field definitions. But if you want to do something
 // more complicated, like change the contents of a field when the tile is
 // selected, you would do it here.
-HRESULT CSampleCredential::SetSelected(_Out_ BOOL *pbAutoLogon)
+HRESULT CSampleCredential::SetSelected(_Out_ BOOL* pbAutoLogon)
 {
     if (pbAutoLogon == nullptr)
     {
@@ -239,39 +239,39 @@ HRESULT CSampleCredential::SetDeselected()
 
     auto clearSecretField =
         [this, &hr](DWORD fieldId)
-    {
-        if (_rgFieldStrings[fieldId] == nullptr)
         {
-            return;
-        }
+            if (_rgFieldStrings[fieldId] == nullptr)
+            {
+                return;
+            }
 
-        const size_t length =
-            wcslen(_rgFieldStrings[fieldId]);
+            const size_t length =
+                wcslen(_rgFieldStrings[fieldId]);
 
-        SecureZeroMemory(
-            _rgFieldStrings[fieldId],
-            length * sizeof(*_rgFieldStrings[fieldId]));
+            SecureZeroMemory(
+                _rgFieldStrings[fieldId],
+                length * sizeof(*_rgFieldStrings[fieldId]));
 
-        CoTaskMemFree(_rgFieldStrings[fieldId]);
-        _rgFieldStrings[fieldId] = nullptr;
+            CoTaskMemFree(_rgFieldStrings[fieldId]);
+            _rgFieldStrings[fieldId] = nullptr;
 
-        const HRESULT duplicateResult =
-            SHStrDupW(L"", &_rgFieldStrings[fieldId]);
+            const HRESULT duplicateResult =
+                SHStrDupW(L"", &_rgFieldStrings[fieldId]);
 
-        if (FAILED(duplicateResult))
-        {
-            hr = duplicateResult;
-            return;
-        }
+            if (FAILED(duplicateResult))
+            {
+                hr = duplicateResult;
+                return;
+            }
 
-        if (_pCredProvCredentialEvents != nullptr)
-        {
-            _pCredProvCredentialEvents->SetFieldString(
-                this,
-                fieldId,
-                L"");
-        }
-    };
+            if (_pCredProvCredentialEvents != nullptr)
+            {
+                _pCredProvCredentialEvents->SetFieldString(
+                    this,
+                    fieldId,
+                    L"");
+            }
+        };
 
     clearSecretField(SFI_PASSWORD);
     clearSecretField(SFI_SMARTCARD_PIN);
@@ -285,8 +285,8 @@ HRESULT CSampleCredential::SetDeselected()
 // Get info for a particular field of a tile. Called by logonUI to get information
 // to display the tile.
 HRESULT CSampleCredential::GetFieldState(DWORD dwFieldID,
-                                         _Out_ CREDENTIAL_PROVIDER_FIELD_STATE *pcpfs,
-                                         _Out_ CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE *pcpfis)
+    _Out_ CREDENTIAL_PROVIDER_FIELD_STATE* pcpfs,
+    _Out_ CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE* pcpfis)
 {
     HRESULT hr;
 
@@ -305,7 +305,7 @@ HRESULT CSampleCredential::GetFieldState(DWORD dwFieldID,
 }
 
 // Sets ppwsz to the string value of the field at the index dwFieldID
-HRESULT CSampleCredential::GetStringValue(DWORD dwFieldID, _Outptr_result_nullonfailure_ PWSTR *ppwsz)
+HRESULT CSampleCredential::GetStringValue(DWORD dwFieldID, _Outptr_result_nullonfailure_ PWSTR* ppwsz)
 {
     HRESULT hr;
     *ppwsz = nullptr;
@@ -326,7 +326,7 @@ HRESULT CSampleCredential::GetStringValue(DWORD dwFieldID, _Outptr_result_nullon
 }
 
 // Get the image to show in the user tile
-HRESULT CSampleCredential::GetBitmapValue(DWORD dwFieldID, _Outptr_result_nullonfailure_ HBITMAP *phbmp)
+HRESULT CSampleCredential::GetBitmapValue(DWORD dwFieldID, _Outptr_result_nullonfailure_ HBITMAP* phbmp)
 {
     HRESULT hr;
     *phbmp = nullptr;
@@ -356,7 +356,7 @@ HRESULT CSampleCredential::GetBitmapValue(DWORD dwFieldID, _Outptr_result_nullon
 // adjacent to. We recommend that the submit button is placed next to the last
 // field which the user is required to enter information in. Optional fields
 // should be below the submit button.
-HRESULT CSampleCredential::GetSubmitButtonValue(DWORD dwFieldID, _Out_ DWORD *pdwAdjacentTo)
+HRESULT CSampleCredential::GetSubmitButtonValue(DWORD dwFieldID, _Out_ DWORD* pdwAdjacentTo)
 {
     HRESULT hr;
 
@@ -383,9 +383,9 @@ HRESULT CSampleCredential::SetStringValue(DWORD dwFieldID, _In_ PCWSTR pwz)
     // Validate parameters.
     if (dwFieldID < ARRAYSIZE(_rgCredProvFieldDescriptors) &&
         (CPFT_EDIT_TEXT == _rgCredProvFieldDescriptors[dwFieldID].cpft ||
-        CPFT_PASSWORD_TEXT == _rgCredProvFieldDescriptors[dwFieldID].cpft))
+            CPFT_PASSWORD_TEXT == _rgCredProvFieldDescriptors[dwFieldID].cpft))
     {
-        PWSTR *ppwszStored = &_rgFieldStrings[dwFieldID];
+        PWSTR* ppwszStored = &_rgFieldStrings[dwFieldID];
 
         if (*ppwszStored != nullptr &&
             dwFieldID == SFI_PASSWORD)
@@ -415,7 +415,7 @@ HRESULT CSampleCredential::SetStringValue(DWORD dwFieldID, _In_ PCWSTR pwz)
 }
 
 // Returns whether a checkbox is checked or not as well as its label.
-HRESULT CSampleCredential::GetCheckboxValue(DWORD dwFieldID, _Out_ BOOL *pbChecked, _Outptr_result_nullonfailure_ PWSTR *ppwszLabel)
+HRESULT CSampleCredential::GetCheckboxValue(DWORD dwFieldID, _Out_ BOOL* pbChecked, _Outptr_result_nullonfailure_ PWSTR* ppwszLabel)
 {
     HRESULT hr;
     *ppwszLabel = nullptr;
@@ -457,7 +457,7 @@ HRESULT CSampleCredential::SetCheckboxValue(DWORD dwFieldID, BOOL bChecked)
 
 // Returns the number of items to be included in the combobox (pcItems), as well as the
 // currently selected item (pdwSelectedItem).
-HRESULT CSampleCredential::GetComboBoxValueCount(DWORD dwFieldID, _Out_ DWORD *pcItems, _Deref_out_range_(<, *pcItems) _Out_ DWORD *pdwSelectedItem)
+HRESULT CSampleCredential::GetComboBoxValueCount(DWORD dwFieldID, _Out_ DWORD* pcItems, _Deref_out_range_(< , *pcItems) _Out_ DWORD* pdwSelectedItem)
 {
     HRESULT hr;
     *pcItems = 0;
@@ -480,7 +480,7 @@ HRESULT CSampleCredential::GetComboBoxValueCount(DWORD dwFieldID, _Out_ DWORD *p
 }
 
 // Called iteratively to fill the combobox with the string (ppwszItem) at index dwItem.
-HRESULT CSampleCredential::GetComboBoxValueAt(DWORD dwFieldID, DWORD dwItem, _Outptr_result_nullonfailure_ PWSTR *ppwszItem)
+HRESULT CSampleCredential::GetComboBoxValueAt(DWORD dwFieldID, DWORD dwItem, _Outptr_result_nullonfailure_ PWSTR* ppwszItem)
 {
     HRESULT hr;
     *ppwszItem = nullptr;
@@ -549,7 +549,7 @@ HRESULT CSampleCredential::CommandLinkClicked(DWORD dwFieldID)
             _pCredProvCredentialEvents->SetFieldState(nullptr, SFI_CHECKBOX, cpfsShow);
             _pCredProvCredentialEvents->SetFieldState(nullptr, SFI_EDIT_TEXT, cpfsShow);
             _pCredProvCredentialEvents->SetFieldState(nullptr, SFI_COMBOBOX, cpfsShow);
-            _pCredProvCredentialEvents->SetFieldString(nullptr, SFI_HIDECONTROLS_LINK, _fShowControls? L"Hide additional controls" : L"Show additional controls");
+            _pCredProvCredentialEvents->SetFieldString(nullptr, SFI_HIDECONTROLS_LINK, _fShowControls ? L"Hide additional controls" : L"Show additional controls");
             _pCredProvCredentialEvents->EndFieldUpdates();
             _fShowControls = !_fShowControls;
             break;
@@ -601,14 +601,14 @@ std::string CSampleCredential::WideToUtf8(
         '\0');
 
     if (WideCharToMultiByte(
-            CP_UTF8,
-            0,
-            value,
-            characterCount,
-            result.data(),
-            requiredBytes,
-            nullptr,
-            nullptr) <= 0)
+        CP_UTF8,
+        0,
+        value,
+        characterCount,
+        &result[0],
+        requiredBytes,
+        nullptr,
+        nullptr) <= 0)
     {
         return {};
     }
@@ -685,8 +685,8 @@ HRESULT CSampleCredential::VerifySecondFactor(
 
     SetStatusField(
         _useRecoveryAuthentication
-            ? L"Checking recovery drive..."
-            : L"Checking smart card...");
+        ? L"Checking recovery drive..."
+        : L"Checking smart card...");
 
     AuthenticationResult result;
 
@@ -709,16 +709,16 @@ HRESULT CSampleCredential::VerifySecondFactor(
 
         SHStrDupW(
             _useRecoveryAuthentication
-                ? L"Recovery authentication failed."
-                : L"Smart-card authentication failed. Check the card.",
+            ? L"Recovery authentication failed."
+            : L"Smart-card authentication failed. Check the card.",
             optionalStatusText);
 
         *optionalStatusIcon = CPSI_ERROR;
 
         SetStatusField(
             _useRecoveryAuthentication
-                ? L"Recovery authentication failed."
-                : L"Smart-card authentication failed. Check the card and try again.");
+            ? L"Recovery authentication failed."
+            : L"Smart-card authentication failed. Check the card and try again.");
 
         return S_FALSE;
     }
@@ -744,8 +744,8 @@ HRESULT CSampleCredential::VerifySecondFactor(
 
     SetStatusField(
         _useRecoveryAuthentication
-            ? L"Recovery key verified. Submitting Windows password..."
-            : L"Smart card verified. Submitting Windows password...");
+        ? L"Recovery key verified. Submitting Windows password..."
+        : L"Smart card verified. Submitting Windows password...");
 
     return S_OK;
 }
@@ -753,10 +753,10 @@ HRESULT CSampleCredential::VerifySecondFactor(
 // Collect the username and password into a serialized credential for the correct usage scenario
 // (logon/unlock is what's demonstrated in this sample).  LogonUI then passes these credentials
 // back to the system to log on.
-HRESULT CSampleCredential::GetSerialization(_Out_ CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE *pcpgsr,
-                                            _Out_ CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION *pcpcs,
-                                            _Outptr_result_maybenull_ PWSTR *ppwszOptionalStatusText,
-                                            _Out_ CREDENTIAL_PROVIDER_STATUS_ICON *pcpsiOptionalStatusIcon)
+HRESULT CSampleCredential::GetSerialization(_Out_ CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE* pcpgsr,
+    _Out_ CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION* pcpcs,
+    _Outptr_result_maybenull_ PWSTR* ppwszOptionalStatusText,
+    _Out_ CREDENTIAL_PROVIDER_STATUS_ICON* pcpsiOptionalStatusIcon)
 {
     HRESULT hr = E_UNEXPECTED;
     *pcpgsr = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
@@ -851,7 +851,7 @@ HRESULT CSampleCredential::GetSerialization(_Out_ CREDENTIAL_PROVIDER_GET_SERIAL
         if (!CredPackAuthenticationBuffer(dwAuthFlags, _pszQualifiedUserName, const_cast<PWSTR>(_rgFieldStrings[SFI_PASSWORD]), nullptr, &pcpcs->cbSerialization) &&
             (GetLastError() == ERROR_INSUFFICIENT_BUFFER))
         {
-            pcpcs->rgbSerialization = static_cast<byte *>(CoTaskMemAlloc(pcpcs->cbSerialization));
+            pcpcs->rgbSerialization = static_cast<byte*>(CoTaskMemAlloc(pcpcs->cbSerialization));
             if (pcpcs->rgbSerialization != nullptr)
             {
                 hr = S_OK;
@@ -915,9 +915,9 @@ static const REPORT_RESULT_STATUS_INFO s_rgLogonStatusInfo[] =
 // customize the error shown in the case of bad username/password and in the case of the account
 // being disabled.
 HRESULT CSampleCredential::ReportResult(NTSTATUS ntsStatus,
-                                        NTSTATUS ntsSubstatus,
-                                        _Outptr_result_maybenull_ PWSTR *ppwszOptionalStatusText,
-                                        _Out_ CREDENTIAL_PROVIDER_STATUS_ICON *pcpsiOptionalStatusIcon)
+    NTSTATUS ntsSubstatus,
+    _Outptr_result_maybenull_ PWSTR* ppwszOptionalStatusText,
+    _Out_ CREDENTIAL_PROVIDER_STATUS_ICON* pcpsiOptionalStatusIcon)
 {
     *ppwszOptionalStatusText = nullptr;
     *pcpsiOptionalStatusIcon = CPSI_NONE;
@@ -974,7 +974,7 @@ HRESULT CSampleCredential::ReportResult(NTSTATUS ntsStatus,
 }
 
 // Gets the SID of the user corresponding to the credential.
-HRESULT CSampleCredential::GetUserSid(_Outptr_result_nullonfailure_ PWSTR *ppszSid)
+HRESULT CSampleCredential::GetUserSid(_Outptr_result_nullonfailure_ PWSTR* ppszSid)
 {
     *ppszSid = nullptr;
     HRESULT hr = E_UNEXPECTED;
@@ -990,7 +990,7 @@ HRESULT CSampleCredential::GetUserSid(_Outptr_result_nullonfailure_ PWSTR *ppszS
 
 // GetFieldOptions to enable the password reveal button and touch keyboard auto-invoke in the password field.
 HRESULT CSampleCredential::GetFieldOptions(DWORD dwFieldID,
-                                           _Out_ CREDENTIAL_PROVIDER_CREDENTIAL_FIELD_OPTIONS *pcpcfo)
+    _Out_ CREDENTIAL_PROVIDER_CREDENTIAL_FIELD_OPTIONS* pcpcfo)
 {
     *pcpcfo = CPCFO_NONE;
 

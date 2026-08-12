@@ -1,6 +1,6 @@
 #pragma once
 
-#include <optional>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -26,7 +26,7 @@ struct AuthenticationResult
 
     std::string message;
 
-    std::optional<AuthenticatedIdentity> identity;
+    std::unique_ptr<AuthenticatedIdentity> identity;
 
     bool succeeded() const noexcept
     {
@@ -40,8 +40,7 @@ struct AuthenticationResult
 
     static AuthenticationResult success(
         std::string message,
-        std::optional<AuthenticatedIdentity> identity =
-        std::nullopt)
+        std::unique_ptr<AuthenticatedIdentity> identity = nullptr)
     {
         return {
             AuthenticationStatus::Success,
@@ -56,7 +55,7 @@ struct AuthenticationResult
         return {
             AuthenticationStatus::Rejected,
             std::move(message),
-            std::nullopt
+            nullptr
         };
     }
 
@@ -66,7 +65,7 @@ struct AuthenticationResult
         return {
             AuthenticationStatus::InvalidRequest,
             std::move(message),
-            std::nullopt
+            nullptr
         };
     }
 
@@ -76,7 +75,7 @@ struct AuthenticationResult
         return {
             AuthenticationStatus::OperationFailed,
             std::move(message),
-            std::nullopt
+            nullptr
         };
     }
 };

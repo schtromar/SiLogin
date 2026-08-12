@@ -77,7 +77,7 @@ int main(int argumentCount, char* arguments[])
 
         case ProgramMode::EnrollRecovery:
             result = service.enrollRecovery(
-                commandLine.recoveryDrive());
+                commandLine.recoveryDrive().string());
             break;
 
         case ProgramMode::AlternateAuthenticate:

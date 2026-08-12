@@ -41,7 +41,7 @@ namespace
             0,
             value.data(),
             static_cast<int>(value.size()),
-            result.data(),
+            &result[0],
             requiredBytes,
             nullptr,
             nullptr) <= 0)

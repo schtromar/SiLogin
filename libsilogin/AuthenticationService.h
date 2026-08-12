@@ -2,7 +2,23 @@
 
 #include "AuthenticationResult.h"
 
-#include <filesystem>
+#if defined(__has_include)
+#  if __has_include(<filesystem>)
+#    include <filesystem>
+#  elif __has_include(<experimental/filesystem>)
+#    include <experimental/filesystem>
+#    define LIBSILOGIN_USE_EXPERIMENTAL_FILESYSTEM
+#  else
+#    error "<filesystem> or <experimental/filesystem> is required"
+#  endif
+#else
+#  include <filesystem>
+#endif
+#if defined(LIBSILOGIN_USE_EXPERIMENTAL_FILESYSTEM)
+namespace std {
+    namespace filesystem = experimental::filesystem;
+}
+#endif
 #include <string>
 
 class Logger;
@@ -21,7 +37,7 @@ public:
         const std::string& expectedAccountSid) noexcept;
 
     AuthenticationResult enrollRecovery(
-        const std::filesystem::path& driveRoot) noexcept;
+        const std::string& driveRoot) noexcept;
 
     AuthenticationResult authenticateWithRecovery() noexcept;
 

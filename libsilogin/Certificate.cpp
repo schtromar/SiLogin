@@ -44,16 +44,18 @@ namespace
         std::string result(
             static_cast<std::size_t>(requiredBytes),
             '\0');
-
-        WideCharToMultiByte(
+        if (WideCharToMultiByte(
             CP_UTF8,
             0,
             value.data(),
             static_cast<int>(value.size()),
-            result.data(),
+            &result[0],
             requiredBytes,
             nullptr,
-            nullptr);
+            nullptr) <= 0)
+        {
+            return {};
+        }
 
         return result;
     }
