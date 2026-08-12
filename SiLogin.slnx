@@ -1,0 +1,9 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="libsilogin/libsilogin.vcxproj" Id="4d8f0384-2ebb-475b-b7ed-9fdd5bfd0e46" />
+  <Project Path="silogin-cli/silogin-cli.vcxproj" Id="e6ddcae0-eb96-4948-a87a-51bf984b51cc" />
+  <Project Path="silogin-provider/silogin-provider.vcxproj" Id="7cd2f53c-8151-4fe6-ade5-6e43d67f618e" />
+</Solution>
