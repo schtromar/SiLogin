@@ -3,6 +3,11 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Folder Name="/Solution Items/">
+    <File Path="install.ps1" />
+    <File Path="register.reg" />
+    <File Path="unregister.reg" />
+  </Folder>
   <Project Path="CredentialProvider/cpp/SampleV2CredentialProvider.vcxproj" Id="98e74d71-5237-41fa-8d36-206c0d110626" />
   <Project Path="libsilogin/libsilogin.vcxproj" Id="4d8f0384-2ebb-475b-b7ed-9fdd5bfd0e46" />
   <Project Path="silogin-cli/silogin-cli.vcxproj" Id="e6ddcae0-eb96-4948-a87a-51bf984b51cc" />
