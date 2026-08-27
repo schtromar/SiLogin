@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AuthenticationResult.h"
+#include "LsaAuthenticationProtocol.h"
 
 #if defined(__has_include)
 #  if __has_include(<filesystem>)
@@ -35,6 +36,9 @@ public:
 
     AuthenticationResult authenticateWithCardForAccount(
         const std::string& expectedAccountSid) noexcept;
+
+    std::optional<LsaLogonProof> createLogonProof(
+        const LsaLogonChallenge& challenge) noexcept;
 
     AuthenticationResult enrollRecovery(
         const std::string& driveRoot) noexcept;

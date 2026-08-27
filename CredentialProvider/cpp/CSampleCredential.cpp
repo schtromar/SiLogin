@@ -9,10 +9,6 @@
 //
 
 #include "pch.h"
-#ifndef WIN32_NO_STATUS
-#include <ntstatus.h>
-#define WIN32_NO_STATUS
-#endif
 #include <unknwn.h>
 #include "CSampleCredential.h"
 #include "guid.h"
@@ -530,7 +526,6 @@ HRESULT CSampleCredential::CommandLinkClicked(DWORD dwFieldID)
     if (dwFieldID < ARRAYSIZE(_rgCredProvFieldDescriptors) &&
         (CPFT_COMMAND_LINK == _rgCredProvFieldDescriptors[dwFieldID].cpft))
     {
-        HWND hwndOwner = nullptr;
         switch (dwFieldID)
         {
         case SFI_LAUNCHWINDOW_LINK:
@@ -906,8 +901,11 @@ struct REPORT_RESULT_STATUS_INFO
 
 static const REPORT_RESULT_STATUS_INFO s_rgLogonStatusInfo[] =
 {
-    { STATUS_LOGON_FAILURE, STATUS_SUCCESS, L"Incorrect password or username.", CPSI_ERROR, },
-    { STATUS_ACCOUNT_RESTRICTION, STATUS_ACCOUNT_DISABLED, L"The account is disabled.", CPSI_WARNING },
+    { static_cast<NTSTATUS>(0xC000006DL), 0,
+        L"Incorrect password or username.", CPSI_ERROR, },
+    { static_cast<NTSTATUS>(0xC000006EL),
+        static_cast<NTSTATUS>(0xC0000072L),
+        L"The account is disabled.", CPSI_WARNING },
 };
 
 // ReportResult is completely optional.  Its purpose is to allow a credential to customize the string

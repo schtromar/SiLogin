@@ -1,15 +1,23 @@
-#Requires -RunAsAdministrator
+[CmdletBinding()]
+param(
+    [ValidateSet('Preflight', 'Install', 'Test', 'Uninstall')]
+    [string]$Action = 'Install',
 
-$installDirectory="C:/Program Files/SiLogin"
-$system32Directory="C:/Windows/System32"
-$credentialProviderDll="x64/Release/silogin-credentialProvider.dll"
+    [switch]$VmConfirmed
+)
 
-## Check if the install directory exists, if not create it
-if (-not (Test-Path $installDirectory)) {
-	New-Item -ItemType Directory -Path $installDirectory
+$ErrorActionPreference = 'Stop'
+$installer = Join-Path $PSScriptRoot 'silogin-authpak\Test-EIDAuthenticationPackage.ps1'
+if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+    throw "SiLogin authentication-package installer not found: $installer"
 }
 
-## Install the credential provider
-cp $credentialProviderDll $system32Directory/.
-regedit.exe /s register.reg
+$arguments = @{
+    Action = $Action
+}
+if ($VmConfirmed) {
+    $arguments.VmConfirmed = $true
+}
+
+& $installer @arguments
 

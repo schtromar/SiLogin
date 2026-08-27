@@ -168,6 +168,26 @@ AuthenticationService::authenticateWithCardForAccount(
         });
 }
 
+std::optional<LsaLogonProof> AuthenticationService::createLogonProof(
+    const LsaLogonChallenge& challenge) noexcept
+{
+    try
+    {
+        AuthenticationWorkflow workflow(logger_);
+        return workflow.createLogonProof(challenge);
+    }
+    catch (const std::exception& exception)
+    {
+        logger_.error(std::string("Logon proof creation failed: ") + exception.what());
+        return std::nullopt;
+    }
+    catch (...)
+    {
+        logger_.critical("Logon proof creation failed with an unknown exception.");
+        return std::nullopt;
+    }
+}
+
 AuthenticationResult
 AuthenticationService::enrollRecovery(
     const std::string& driveRoot) noexcept

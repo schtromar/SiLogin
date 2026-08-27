@@ -10,6 +10,8 @@
   </Folder>
   <Project Path="CredentialProvider/cpp/SampleV2CredentialProvider.vcxproj" Id="98e74d71-5237-41fa-8d36-206c0d110626" />
   <Project Path="libsilogin/libsilogin.vcxproj" Id="4d8f0384-2ebb-475b-b7ed-9fdd5bfd0e46" />
+  <Project Path="silogin-authpak/EIDAuthenticationPackage.vcxproj" Id="4711af6d-0e6c-4d71-9238-053fb0b287da" />
   <Project Path="silogin-cli/silogin-cli.vcxproj" Id="e6ddcae0-eb96-4948-a87a-51bf984b51cc" />
+  <Project Path="silogin-gui/silogin-gui.vcxproj" Id="faaf13e1-8c40-4596-bf4c-f44a4daab128" />
   <Project Path="silogin-provider/silogin-provider.vcxproj" Id="7cd2f53c-8151-4fe6-ade5-6e43d67f618e" />
 </Solution>

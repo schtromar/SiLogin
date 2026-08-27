@@ -531,6 +531,61 @@ int AuthenticationWorkflow::authenticateWithCardForAccount(
     return 0;
 }
 
+std::optional<LsaLogonProof> AuthenticationWorkflow::createLogonProof(
+    const LsaLogonChallenge& challenge)
+{
+    if (challenge.accountSid.empty())
+        throw std::invalid_argument("The challenge has no account SID.");
+
+    const IdentityStore store(challenge.accountSid);
+    const std::optional<Enrollment> enrollment = store.load();
+    if (!enrollment || enrollment->accountSid != challenge.accountSid)
+        return std::nullopt;
+
+    SmartCard card(logger_);
+    if (!card.initialize() || !card.waitForInsertion() || !card.connect())
+        return std::nullopt;
+
+    try
+    {
+        const SmartCardInformation information = card.cardInformation();
+        std::vector<Certificate> certificates =
+            loadSmartCardCertificates(logger_, information.readerName);
+        const Certificate* certificate = findAuthenticationCertificate(certificates);
+        if (!certificate ||
+            !enrollment->matchesSid(challenge.accountSid, *certificate) ||
+            !SmartCardSigner::verify(*certificate, enrollment->signingPayload(),
+                enrollment->signature))
+        {
+            card.disconnect();
+            return std::nullopt;
+        }
+
+        LsaLogonProof proof;
+        proof.challenge = challenge;
+        const PCCERT_CONTEXT context = certificate->context();
+        proof.certificateDer.assign(context->pbCertEncoded,
+            context->pbCertEncoded + context->cbCertEncoded);
+        proof.signature = SmartCardSigner::sign(*certificate,
+            LsaAuthenticationProtocol::signingPayload(challenge),
+            std::wstring_view{}, information.readerName);
+
+        if (!SmartCardSigner::verify(*certificate,
+            LsaAuthenticationProtocol::signingPayload(challenge), proof.signature))
+        {
+            card.disconnect();
+            return std::nullopt;
+        }
+        card.disconnect();
+        return proof;
+    }
+    catch (...)
+    {
+        card.disconnect();
+        throw;
+    }
+}
+
 int AuthenticationWorkflow::enrollRecovery(
     const std::filesystem::path& suppliedPath)
 {

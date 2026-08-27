@@ -709,3 +709,58 @@ HRESULT SplitDomainAndUsername(_In_ PCWSTR pszQualifiedUserName, _Outptr_result_
     }
     return hr;
 }
+
+HRESULT RetrieveSiLoginAuthPackage(_Out_ ULONG* packageId)
+{
+    if (!packageId) return E_INVALIDARG;
+    HANDLE lsa = nullptr;
+    NTSTATUS status = LsaConnectUntrusted(&lsa);
+    if (status < 0) return HRESULT_FROM_NT(status);
+    LSA_STRING name{};
+    char packageName[] = "silogin-authpak";
+    name.Buffer = packageName;
+    name.Length = static_cast<USHORT>(strlen(packageName));
+    name.MaximumLength = name.Length + 1;
+    status = LsaLookupAuthenticationPackage(lsa, &name, packageId);
+    LsaDeregisterLogonProcess(lsa);
+    return status < 0 ? HRESULT_FROM_NT(status) : S_OK;
+}
+
+HRESULT RequestSiLoginChallenge(const std::string& accountSid,
+    LsaLogonChallenge& challenge, ULONG* packageId)
+{
+    try
+    {
+        HANDLE lsa = nullptr;
+        NTSTATUS status = LsaConnectUntrusted(&lsa);
+        if (status < 0) return HRESULT_FROM_NT(status);
+        ULONG id = 0;
+        LSA_STRING name{};
+        char packageName[] = "silogin-authpak";
+        name.Buffer = packageName;
+        name.Length = static_cast<USHORT>(strlen(packageName));
+        name.MaximumLength = name.Length + 1;
+        status = LsaLookupAuthenticationPackage(lsa, &name, &id);
+        if (status < 0) {
+            LsaDeregisterLogonProcess(lsa);
+            return HRESULT_FROM_NT(status);
+        }
+        const auto request = LsaAuthenticationProtocol::challengeRequest(accountSid);
+        PVOID response = nullptr;
+        ULONG responseLength = 0;
+        NTSTATUS protocolStatus = 0;
+        status = LsaCallAuthenticationPackage(lsa, id,
+            const_cast<unsigned char*>(request.data()),
+            static_cast<ULONG>(request.size()), &response,
+            &responseLength, &protocolStatus);
+        HRESULT result = S_OK;
+        if (status < 0) result = HRESULT_FROM_NT(status);
+        else if (protocolStatus < 0) result = HRESULT_FROM_NT(protocolStatus);
+        else challenge = LsaAuthenticationProtocol::parseChallenge(response, responseLength);
+        if (response) LsaFreeReturnBuffer(response);
+        LsaDeregisterLogonProcess(lsa);
+        if (SUCCEEDED(result) && packageId) *packageId = id;
+        return result;
+    }
+    catch (...) { return E_FAIL; }
+}

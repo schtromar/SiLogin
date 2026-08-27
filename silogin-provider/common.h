@@ -55,9 +55,9 @@ static const FIELD_STATE_PAIR s_rgFieldStatePairs[] =
     { CPFS_DISPLAY_IN_BOTH,            CPFIS_NONE    },    // SFI_TILEIMAGE
     { CPFS_HIDDEN,                     CPFIS_NONE    },    // SFI_LABEL
     { CPFS_DISPLAY_IN_BOTH,            CPFIS_NONE    },    // SFI_LARGE_TEXT
-    { CPFS_DISPLAY_IN_SELECTED_TILE,   CPFIS_FOCUSED },    // SFI_PASSWORD
+    { CPFS_HIDDEN,                     CPFIS_NONE    },    // SFI_PASSWORD (recovery only)
     { CPFS_HIDDEN,                     CPFIS_NONE    },    // SFI_SMARTCARD_PIN (legacy/unused)
-    { CPFS_DISPLAY_IN_SELECTED_TILE,   CPFIS_NONE    },    // SFI_SUBMIT_BUTTON
+    { CPFS_HIDDEN,                     CPFIS_NONE    },    // SFI_SUBMIT_BUTTON (recovery only)
     { CPFS_DISPLAY_IN_SELECTED_TILE,   CPFIS_NONE    },    // SFI_LAUNCHWINDOW_LINK
     { CPFS_HIDDEN,                     CPFIS_NONE    },    // SFI_HIDECONTROLS_LINK
     { CPFS_HIDDEN,                     CPFIS_NONE    },    // SFI_FULLNAME_TEXT
@@ -76,17 +76,17 @@ static const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR s_rgCredProvFieldDescriptors[]
 {
     { SFI_TILEIMAGE,         CPFT_TILE_IMAGE,    const_cast<PWSTR>(L"Image"),                      CPFG_CREDENTIAL_PROVIDER_LOGO  },
     { SFI_LABEL,             CPFT_SMALL_TEXT,    const_cast<PWSTR>(L"Tooltip"),                    CPFG_CREDENTIAL_PROVIDER_LABEL },
-    { SFI_LARGE_TEXT,        CPFT_LARGE_TEXT,    const_cast<PWSTR>(L"Sample Credential Provider")                                 },
+    { SFI_LARGE_TEXT,        CPFT_LARGE_TEXT,    const_cast<PWSTR>(L"SiLogin smart-card sign-in")                                 },
     { SFI_PASSWORD,          CPFT_PASSWORD_TEXT, const_cast<PWSTR>(L"Windows password")                                              },
     { SFI_SMARTCARD_PIN,     CPFT_PASSWORD_TEXT, const_cast<PWSTR>(L"Unused smart-card PIN")                                               },
-    { SFI_SUBMIT_BUTTON,     CPFT_SUBMIT_BUTTON, const_cast<PWSTR>(L"Submit")                                                     },
+    { SFI_SUBMIT_BUTTON,     CPFT_SUBMIT_BUTTON, const_cast<PWSTR>(L"Sign in")                                                    },
     { SFI_LAUNCHWINDOW_LINK, CPFT_COMMAND_LINK,  const_cast<PWSTR>(L"Use recovery key")                                       },
     { SFI_HIDECONTROLS_LINK, CPFT_COMMAND_LINK,  const_cast<PWSTR>(L"Hide additional controls")                                   },
     { SFI_FULLNAME_TEXT,     CPFT_SMALL_TEXT,    const_cast<PWSTR>(L"Full name: ")                                                },
     { SFI_DISPLAYNAME_TEXT,  CPFT_SMALL_TEXT,    const_cast<PWSTR>(L"Display name: ")                                             },
     { SFI_LOGONSTATUS_TEXT,  CPFT_SMALL_TEXT,    const_cast<PWSTR>(L"SiLogin status")                                             },
     { SFI_CHECKBOX,          CPFT_CHECKBOX,      const_cast<PWSTR>(L"Checkbox")                                                   },
-    { SFI_EDIT_TEXT,         CPFT_EDIT_TEXT,     const_cast<PWSTR>(L"Edit text")                                                  },
+    { SFI_EDIT_TEXT,         CPFT_EDIT_TEXT,     const_cast<PWSTR>(L"Smart card")                                                 },
     { SFI_COMBOBOX,          CPFT_COMBOBOX,      const_cast<PWSTR>(L"Combobox")                                                   },
 };
 

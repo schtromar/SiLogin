@@ -9,10 +9,6 @@
 //
 
 #include "pch.h"
-#ifndef WIN32_NO_STATUS
-#include <ntstatus.h>
-#define WIN32_NO_STATUS
-#endif
 #include <unknwn.h>
 #include "CSampleCredential.h"
 #include "guid.h"
@@ -97,12 +93,12 @@ HRESULT CSampleCredential::Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus,
     }
     if (SUCCEEDED(hr))
     {
-        hr = SHStrDupW(L"SiLogin two-factor sign-in", &_rgFieldStrings[SFI_LARGE_TEXT]);
+        hr = SHStrDupW(L"SiLogin smart-card sign-in", &_rgFieldStrings[SFI_LARGE_TEXT]);
     }
 
     if (SUCCEEDED(hr))
     {
-        hr = SHStrDupW(L"Edit Text", &_rgFieldStrings[SFI_EDIT_TEXT]);
+        hr = SHStrDupW(L"", &_rgFieldStrings[SFI_EDIT_TEXT]);
     }
     
     if (SUCCEEDED(hr))
@@ -172,7 +168,7 @@ HRESULT CSampleCredential::Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus,
     if (SUCCEEDED(hr))
     {
         hr = SHStrDupW(
-            L"Enter your Windows password, smart-card PIN, and insert your Slovenian eID card.",
+            L"Insert your enrolled Slovenian eID card and select Sign in.",
             &_rgFieldStrings[SFI_LOGONSTATUS_TEXT]);
     }
 
@@ -218,13 +214,30 @@ HRESULT CSampleCredential::SetSelected(_Out_ BOOL *pbAutoLogon)
         return E_INVALIDARG;
     }
 
-    *pbAutoLogon = FALSE;
+    // The normal smart-card path has no editable fields. Asking LogonUI to
+    // auto-logon is the supported way to invoke GetSerialization when the
+    // user selects this local-account tile.
+    *pbAutoLogon = _fIsLocalUser ? TRUE : FALSE;
 
     _secondFactorVerified = false;
     _useRecoveryAuthentication = false;
 
+    if (_pCredProvCredentialEvents != nullptr)
+    {
+        _pCredProvCredentialEvents->BeginFieldUpdates();
+        _pCredProvCredentialEvents->SetFieldState(
+            this, SFI_PASSWORD, CPFS_HIDDEN);
+        _pCredProvCredentialEvents->SetFieldState(
+            this, SFI_SUBMIT_BUTTON, CPFS_HIDDEN);
+        _pCredProvCredentialEvents->SetFieldInteractiveState(
+            this, SFI_PASSWORD, CPFIS_NONE);
+        _pCredProvCredentialEvents->SetFieldString(
+            this, SFI_LAUNCHWINDOW_LINK, L"Use recovery key");
+        _pCredProvCredentialEvents->EndFieldUpdates();
+    }
+
     return SetStatusField(
-        L"Enter your Windows password, smart-card PIN, and insert your Slovenian eID card.");
+        L"Insert your enrolled Slovenian eID card and select Sign in.");
 }
 
 // Similarly to SetSelected, LogonUI calls this when your tile was selected
@@ -277,7 +290,7 @@ HRESULT CSampleCredential::SetDeselected()
     clearSecretField(SFI_SMARTCARD_PIN);
 
     SetStatusField(
-        L"Enter your Windows password and insert your Slovenian eID card.");
+        L"Insert your enrolled Slovenian eID card and select Sign in.");
 
     return hr;
 }
@@ -530,15 +543,43 @@ HRESULT CSampleCredential::CommandLinkClicked(DWORD dwFieldID)
     if (dwFieldID < ARRAYSIZE(_rgCredProvFieldDescriptors) &&
         (CPFT_COMMAND_LINK == _rgCredProvFieldDescriptors[dwFieldID].cpft))
     {
-        HWND hwndOwner = nullptr;
         switch (dwFieldID)
         {
         case SFI_LAUNCHWINDOW_LINK:
-            _useRecoveryAuthentication = true;
+            _useRecoveryAuthentication = !_useRecoveryAuthentication;
             _secondFactorVerified = false;
 
-            SetStatusField(
-                L"Insert your recovery drive, enter your Windows password, and press submit. The smart-card PIN is not used for recovery.");
+            if (_pCredProvCredentialEvents != nullptr)
+            {
+                _pCredProvCredentialEvents->BeginFieldUpdates();
+                _pCredProvCredentialEvents->SetFieldState(
+                    this,
+                    SFI_PASSWORD,
+                    _useRecoveryAuthentication
+                        ? CPFS_DISPLAY_IN_SELECTED_TILE
+                        : CPFS_HIDDEN);
+                _pCredProvCredentialEvents->SetFieldState(
+                    this,
+                    SFI_SUBMIT_BUTTON,
+                    _useRecoveryAuthentication
+                        ? CPFS_DISPLAY_IN_SELECTED_TILE
+                        : CPFS_HIDDEN);
+                _pCredProvCredentialEvents->SetFieldInteractiveState(
+                    this,
+                    SFI_PASSWORD,
+                    _useRecoveryAuthentication ? CPFIS_FOCUSED : CPFIS_NONE);
+                _pCredProvCredentialEvents->SetFieldString(
+                    this,
+                    SFI_LAUNCHWINDOW_LINK,
+                    _useRecoveryAuthentication
+                        ? L"Use smart card"
+                        : L"Use recovery key");
+                _pCredProvCredentialEvents->EndFieldUpdates();
+            }
+
+            SetStatusField(_useRecoveryAuthentication
+                ? L"Insert the recovery drive, enter the Windows password, and select Sign in."
+                : L"Insert your enrolled Slovenian eID card and select Sign in.");
             break;
         case SFI_HIDECONTROLS_LINK:
             _pCredProvCredentialEvents->BeginFieldUpdates();
@@ -745,7 +786,7 @@ HRESULT CSampleCredential::VerifySecondFactor(
     SetStatusField(
         _useRecoveryAuthentication
             ? L"Recovery key verified. Submitting Windows password..."
-            : L"Smart card verified. Submitting Windows password...");
+            : L"Smart card verified.");
 
     return S_OK;
 }
@@ -763,6 +804,52 @@ HRESULT CSampleCredential::GetSerialization(_Out_ CREDENTIAL_PROVIDER_GET_SERIAL
     *ppwszOptionalStatusText = nullptr;
     *pcpsiOptionalStatusIcon = CPSI_NONE;
     ZeroMemory(pcpcs, sizeof(*pcpcs));
+
+    // Passwordless local-account path: obtain a one-time AP challenge, sign it
+    // with the enrolled card, and submit the proof directly to SiLogin.
+    if (_fIsLocalUser && !_useRecoveryAuthentication && _pszUserSid != nullptr)
+    {
+        const std::string selectedSid = WideToUtf8(_pszUserSid);
+        LsaLogonChallenge challenge;
+        ULONG packageId = 0;
+        hr = RequestSiLoginChallenge(selectedSid, challenge, &packageId);
+        if (FAILED(hr))
+        {
+            SHStrDupW(L"Could not obtain a SiLogin challenge.", ppwszOptionalStatusText);
+            *pcpsiOptionalStatusIcon = CPSI_ERROR;
+            return S_OK;
+        }
+
+        const std::optional<LsaLogonProof> proof =
+            _authenticationService.createLogonProof(challenge);
+        if (!proof)
+        {
+            SHStrDupW(L"The smart card proof could not be created.", ppwszOptionalStatusText);
+            *pcpsiOptionalStatusIcon = CPSI_ERROR;
+            return S_OK;
+        }
+
+        try
+        {
+            const auto serialized = LsaAuthenticationProtocol::serializeProof(*proof);
+            pcpcs->rgbSerialization = static_cast<byte*>(
+                CoTaskMemAlloc(serialized.size()));
+            if (!pcpcs->rgbSerialization) return E_OUTOFMEMORY;
+            memcpy(pcpcs->rgbSerialization, serialized.data(), serialized.size());
+            pcpcs->cbSerialization = static_cast<ULONG>(serialized.size());
+            pcpcs->ulAuthenticationPackage = packageId;
+            pcpcs->clsidCredentialProvider = CLSID_CSample;
+            *pcpgsr = CPGSR_RETURN_CREDENTIAL_FINISHED;
+            SetStatusField(L"Smart-card proof created. Signing in...");
+            return S_OK;
+        }
+        catch (...)
+        {
+            SHStrDupW(L"The SiLogin proof could not be serialized.", ppwszOptionalStatusText);
+            *pcpsiOptionalStatusIcon = CPSI_ERROR;
+            return E_FAIL;
+        }
+    }
 
     if (_rgFieldStrings[SFI_PASSWORD] == nullptr ||
         _rgFieldStrings[SFI_PASSWORD][0] == L'\0')
@@ -906,7 +993,7 @@ struct REPORT_RESULT_STATUS_INFO
 
 static const REPORT_RESULT_STATUS_INFO s_rgLogonStatusInfo[] =
 {
-    { STATUS_LOGON_FAILURE, STATUS_SUCCESS, L"Incorrect password or username.", CPSI_ERROR, },
+    { STATUS_LOGON_FAILURE, 0, L"The smart-card proof was rejected.", CPSI_ERROR, },
     { STATUS_ACCOUNT_RESTRICTION, STATUS_ACCOUNT_DISABLED, L"The account is disabled.", CPSI_WARNING },
 };
 
@@ -941,14 +1028,35 @@ HRESULT CSampleCredential::ReportResult(NTSTATUS ntsStatus,
             *pcpsiOptionalStatusIcon = s_rgLogonStatusInfo[dwStatusInfo].cpsi;
         }
     }
+    else if (FAILED(HRESULT_FROM_NT(ntsStatus)))
+    {
+        // Keep the raw codes visible while the custom authentication package is
+        // being validated.  LogonUI's stock messages collapse several very
+        // different failures into "The user account does not exist".
+        wchar_t diagnostic[160]{};
+        swprintf_s(diagnostic, ARRAYSIZE(diagnostic),
+            L"SiLogin failed (status 0x%08X, substatus 0x%08X).",
+            static_cast<unsigned long>(ntsStatus),
+            static_cast<unsigned long>(ntsSubstatus));
+        if (SUCCEEDED(SHStrDupW(diagnostic, ppwszOptionalStatusText)))
+        {
+            *pcpsiOptionalStatusIcon = CPSI_ERROR;
+        }
+    }
 
     // If we failed the logon, try to erase the password field.
     if (FAILED(HRESULT_FROM_NT(ntsStatus)))
     {
         _secondFactorVerified = false;
 
-        SetStatusField(
-            L"Windows rejected the password. Enter it again and re-verify the second factor.");
+        wchar_t statusText[192]{};
+        swprintf_s(statusText, ARRAYSIZE(statusText),
+            _useRecoveryAuthentication
+                ? L"Recovery sign-in failed (0x%08X / 0x%08X)."
+                : L"Smart-card sign-in failed (0x%08X / 0x%08X).",
+            static_cast<unsigned long>(ntsStatus),
+            static_cast<unsigned long>(ntsSubstatus));
+        SetStatusField(statusText);
 
         if (_pCredProvCredentialEvents)
         {

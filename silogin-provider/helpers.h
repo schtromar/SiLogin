@@ -11,6 +11,9 @@
 
 #pragma once
 
+#include "../libsilogin/LsaAuthenticationProtocol.h"
+#include <string>
+
 #pragma warning(push)
 #pragma warning(disable: 28251)
 #include <credentialprovider.h>
@@ -72,6 +75,13 @@ HRESULT KerbInteractiveUnlockLogonPack(
 HRESULT RetrieveNegotiateAuthPackage(
     _Out_ ULONG *pulAuthPackage
     );
+
+HRESULT RetrieveSiLoginAuthPackage(_Out_ ULONG* packageId);
+
+HRESULT RequestSiLoginChallenge(
+    _In_ const std::string& accountSid,
+    _Out_ LsaLogonChallenge& challenge,
+    _Out_opt_ ULONG* packageId);
 
 //encrypt a password (if necessary) and copy it; if not, just copy it
 HRESULT ProtectIfNecessaryAndCopyPassword(

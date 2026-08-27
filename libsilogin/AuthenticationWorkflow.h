@@ -1,7 +1,10 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <string>
+
+#include "LsaAuthenticationProtocol.h"
 
 class Logger;
 
@@ -17,6 +20,9 @@ public:
 
     int authenticateWithCardForAccount(
         const std::string& expectedAccountSid);
+
+    std::optional<LsaLogonProof> createLogonProof(
+        const LsaLogonChallenge& challenge);
 
     int enrollRecovery(
         const std::filesystem::path& suppliedPath);
