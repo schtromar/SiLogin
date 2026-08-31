@@ -27,7 +27,7 @@
 
 namespace {
 constexpr char kPackageName[] = "silogin-authpak";
-constexpr ULONGLONG kChallengeLifetime = 60ULL * 10000000ULL;
+constexpr ULONGLONG kChallengeLifetime = 5ULL * 60ULL * 10000000ULL;
 PLSA_DISPATCH_TABLE g_ap = nullptr;
 PLSA_SECPKG_FUNCTION_TABLE g_ssp = nullptr;
 std::mutex g_challengeLock;
@@ -560,6 +560,11 @@ NTSTATUS NTAPI LsaApLogonUserEx2(PLSA_CLIENT_REQUEST clientRequest,
     if (!proof) return STATUS_LOGON_FAILURE;
     const auto qualified = accountNameForSid(proof->challenge.accountSid);
     if (!qualified) return STATUS_NO_SUCH_USER;
+    const size_t accountSeparator = qualified->find(L'\\');
+    const std::wstring localUser = accountSeparator == std::wstring::npos
+        ? *qualified
+        : qualified->substr(accountSeparator + 1);
+    if (localUser.empty()) return STATUS_NO_SUCH_USER;
 
     SECURITY_STRING name{};
     name.Buffer = reinterpret_cast<unsigned short*>(
@@ -576,10 +581,8 @@ NTSTATUS NTAPI LsaApLogonUserEx2(PLSA_CLIENT_REQUEST clientRequest,
     // that produced that name succeeded.  Retry as a flat local SAM name.
     if (status == STATUS_NO_SUCH_USER)
     {
-        const size_t slash = qualified->find(L'\\');
-        if (slash != std::wstring::npos && slash + 1 < qualified->size())
+        if (accountSeparator != std::wstring::npos)
         {
-            const std::wstring localUser = qualified->substr(slash + 1);
             SECURITY_STRING flatUser{};
             flatUser.Buffer = reinterpret_cast<unsigned short*>(
                 const_cast<PWSTR>(localUser.c_str()));
@@ -628,7 +631,10 @@ NTSTATUS NTAPI LsaApLogonUserEx2(PLSA_CLIENT_REQUEST clientRequest,
         return STATUS_UNSUCCESSFUL;
     }
     *tokenType = LsaTokenInformationV2;
-    *accountName = lsaString(*qualified);
+    // LSA records these as separate UserName and LogonDomain fields.  Returning
+    // COMPUTER\user here as well as COMPUTER in authority creates an identity
+    // that AppModel cannot map back to the local account.
+    *accountName = lsaString(localUser);
     *authority = lsaString(localMachine);
     *machine = lsaString(localMachine);
     if (!*accountName || !*authority || !*machine) {
@@ -638,6 +644,14 @@ NTSTATUS NTAPI LsaApLogonUserEx2(PLSA_CLIENT_REQUEST clientRequest,
         CloseHandle(convertedToken);
         return STATUS_NO_MEMORY;
     }
+    if (primary)
+    {
+        // Only publish scalar metadata here. LSA owns the surrounding structure,
+        // while nested string buffers have stricter lifetime/ownership rules.
+        primary->LogonId = *logonId;
+        primary->Flags = PRIMARY_CRED_LOCAL_USER;
+    }
+
     // The converted token owns the logon session represented by LogonId. Keep
     // one handle alive until LSA notifies the package that the session ended;
     // closing it here makes LSA reject the otherwise valid result with
