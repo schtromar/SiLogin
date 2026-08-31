@@ -16,10 +16,29 @@
 #include "CSampleProvider.h"
 #include "CSampleCredential.h"
 #include "guid.h"
+#include "../libsilogin/IdentityStore.h"
+
+namespace
+{
+    std::string SidToUtf8(PCWSTR sid)
+    {
+        if (sid == nullptr) return {};
+        const int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+            sid, -1, nullptr, 0, nullptr, nullptr);
+        if (size <= 1) return {};
+        std::string value(static_cast<size_t>(size), '\0');
+        if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, sid, -1,
+            value.data(), size, nullptr, nullptr) == 0)
+            return {};
+        value.pop_back();
+        return value;
+    }
+}
 
 CSampleProvider::CSampleProvider():
     _cRef(1),
-    _pCredential(nullptr),
+    _fRecreateEnumeratedCredentials(true),
+    _cpus(CPUS_INVALID),
     _pCredProviderUserArray(nullptr)
 {
     DllAddRef();
@@ -27,11 +46,7 @@ CSampleProvider::CSampleProvider():
 
 CSampleProvider::~CSampleProvider()
 {
-    if (_pCredential != nullptr)
-    {
-        _pCredential->Release();
-        _pCredential = nullptr;
-    }
+    _ReleaseEnumeratedCredentials();
     if (_pCredProviderUserArray != nullptr)
     {
         _pCredProviderUserArray->Release();
@@ -170,7 +185,7 @@ HRESULT CSampleProvider::GetCredentialCount(
         _CreateEnumeratedCredentials();
     }
 
-    *pdwCount = 1;
+    *pdwCount = static_cast<DWORD>(_credentials.size());
 
     return S_OK;
 }
@@ -184,9 +199,9 @@ HRESULT CSampleProvider::GetCredentialAt(
     HRESULT hr = E_INVALIDARG;
     *ppcpc = nullptr;
 
-    if ((dwIndex == 0) && ppcpc)
+    if (ppcpc != nullptr && dwIndex < _credentials.size())
     {
-        hr = _pCredential->QueryInterface(IID_PPV_ARGS(ppcpc));
+        hr = _credentials[dwIndex]->QueryInterface(IID_PPV_ARGS(ppcpc));
     }
     return hr;
 }
@@ -201,6 +216,7 @@ HRESULT CSampleProvider::SetUserArray(_In_ ICredentialProviderUserArray *users)
     }
     _pCredProviderUserArray = users;
     _pCredProviderUserArray->AddRef();
+    _fRecreateEnumeratedCredentials = true;
     return S_OK;
 }
 
@@ -221,45 +237,57 @@ void CSampleProvider::_CreateEnumeratedCredentials()
 
 void CSampleProvider::_ReleaseEnumeratedCredentials()
 {
-    if (_pCredential != nullptr)
+    for (CSampleCredential* credential : _credentials)
     {
-        _pCredential->Release();
-        _pCredential = nullptr;
+        credential->Release();
     }
+    _credentials.clear();
 }
 
 HRESULT CSampleProvider::_EnumerateCredentials()
 {
-    HRESULT hr = E_UNEXPECTED;
-    if (_pCredProviderUserArray != nullptr)
+    if (_pCredProviderUserArray == nullptr) return S_OK;
+
+    DWORD userCount = 0;
+    HRESULT hr = _pCredProviderUserArray->GetCount(&userCount);
+    if (FAILED(hr)) return hr;
+
+    for (DWORD index = 0; index < userCount; ++index)
     {
-        DWORD dwUserCount;
-        _pCredProviderUserArray->GetCount(&dwUserCount);
-        if (dwUserCount > 0)
+        ICredentialProviderUser* user = nullptr;
+        hr = _pCredProviderUserArray->GetAt(index, &user);
+        if (FAILED(hr)) return hr;
+
+        GUID providerId{};
+        PWSTR sid = nullptr;
+        const HRESULT providerResult = user->GetProviderID(&providerId);
+        const HRESULT sidResult = user->GetSid(&sid);
+        bool enrolledLocalUser = false;
+        if (SUCCEEDED(providerResult) && SUCCEEDED(sidResult) &&
+            providerId == Identity_LocalUserProvider)
         {
-            ICredentialProviderUser *pCredUser;
-            hr = _pCredProviderUserArray->GetAt(0, &pCredUser);
-            if (SUCCEEDED(hr))
+            try
             {
-                _pCredential = new(std::nothrow) CSampleCredential();
-                if (_pCredential != nullptr)
-                {
-                    hr = _pCredential->Initialize(_cpus, s_rgCredProvFieldDescriptors, s_rgFieldStatePairs, pCredUser);
-                    if (FAILED(hr))
-                    {
-                        _pCredential->Release();
-                        _pCredential = nullptr;
-                    }
-                }
-                else
-                {
-                    hr = E_OUTOFMEMORY;
-                }
-                pCredUser->Release();
+                const std::string sidUtf8 = SidToUtf8(sid);
+                enrolledLocalUser = !sidUtf8.empty() &&
+                    IdentityStore(sidUtf8).load().has_value();
             }
+            catch (...) { enrolledLocalUser = false; }
         }
+
+        CoTaskMemFree(sid);
+        if (!enrolledLocalUser) { user->Release(); continue; }
+
+        CSampleCredential* credential = new(std::nothrow) CSampleCredential();
+        if (credential == nullptr) { user->Release(); return E_OUTOFMEMORY; }
+        hr = credential->Initialize(_cpus, s_rgCredProvFieldDescriptors,
+            s_rgFieldStatePairs, user);
+        user->Release();
+        if (FAILED(hr)) { credential->Release(); return hr; }
+        try { _credentials.push_back(credential); }
+        catch (...) { credential->Release(); return E_OUTOFMEMORY; }
     }
-    return hr;
+    return S_OK;
 }
 
 // Boilerplate code to create our provider.

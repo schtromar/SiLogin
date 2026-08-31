@@ -201,6 +201,24 @@ std::vector<unsigned char> tokenData(HANDLE token,
     return value;
 }
 
+PVOID allocatePrivateHeap(ULONG size)
+{
+    if (g_ssp && g_ssp->AllocatePrivateHeap)
+        return g_ssp->AllocatePrivateHeap(size);
+    return nullptr;
+}
+
+void freePrivateHeap(PVOID value)
+{
+    if (value && g_ssp && g_ssp->FreePrivateHeap)
+        g_ssp->FreePrivateHeap(value);
+}
+
+void freeTokenInformation(PLSA_TOKEN_INFORMATION_V2 value)
+{
+    freePrivateHeap(value);
+}
+
 std::size_t alignedSize(std::size_t value)
 {
     constexpr std::size_t alignment = alignof(void*);
@@ -251,13 +269,14 @@ PLSA_TOKEN_INFORMATION_V2 tokenInformationFromHandle(HANDLE token)
         aclSize = aclInfo.AclBytesInUse;
         total += alignedSize(aclSize);
     }
-    if (total > ULONG_MAX) throw std::length_error("Token information is too large.");
+    if (total > ULONG_MAX) throw std::length_error(
+        "Token information is too large.");
 
     auto* base = static_cast<unsigned char*>(
-        allocateLsaHeap(static_cast<ULONG>(total)));
-    if (!base) throw std::bad_alloc();
-    ZeroMemory(base, total);
+        allocatePrivateHeap(static_cast<ULONG>(total)));
     auto* result = reinterpret_cast<PLSA_TOKEN_INFORMATION_V2>(base);
+    if (!result) throw std::bad_alloc();
+    ZeroMemory(base, total);
     unsigned char* cursor = base + alignedSize(sizeof(*result));
 
     auto copySid = [&cursor](PSID source) -> PSID {
@@ -275,9 +294,9 @@ PLSA_TOKEN_INFORMATION_V2 tokenInformationFromHandle(HANDLE token)
         result->User.User.Sid = copySid(user->User.Sid);
         result->User.User.Attributes = user->User.Attributes;
 
-        result->Groups = reinterpret_cast<PTOKEN_GROUPS>(cursor);
         const std::size_t groupArraySize = FIELD_OFFSET(TOKEN_GROUPS, Groups) +
             groups->GroupCount * sizeof(SID_AND_ATTRIBUTES);
+        result->Groups = reinterpret_cast<PTOKEN_GROUPS>(cursor);
         cursor += alignedSize(groupArraySize);
         result->Groups->GroupCount = groups->GroupCount;
         for (DWORD i = 0; i < groups->GroupCount; ++i)
@@ -307,7 +326,7 @@ PLSA_TOKEN_INFORMATION_V2 tokenInformationFromHandle(HANDLE token)
     }
     catch (...)
     {
-        freeLsaHeap(result);
+        freeTokenInformation(result);
         throw;
     }
 }
@@ -325,6 +344,76 @@ PLSA_UNICODE_STRING lsaString(const std::wstring& value)
     if (!result->Buffer) { freeLsaHeap(result); return nullptr; }
     memcpy(result->Buffer, value.c_str(), result->MaximumLength);
     return result;
+}
+
+void freeLsaString(PLSA_UNICODE_STRING value)
+{
+    if (!value) return;
+    freeLsaHeap(value->Buffer);
+    freeLsaHeap(value);
+}
+
+NTSTATUS createInteractiveProfile(PLSA_CLIENT_REQUEST request,
+    const std::wstring& logonServer, PVOID* profileBuffer,
+    PULONG profileBufferSize)
+{
+    if (!request || !profileBuffer || !profileBufferSize)
+        return STATUS_INVALID_PARAMETER;
+
+    const bool useApDispatch = g_ap && g_ap->AllocateClientBuffer &&
+        g_ap->CopyToClientBuffer && g_ap->FreeClientBuffer;
+    if (!useApDispatch &&
+        (!g_ssp || !g_ssp->AllocateClientBuffer ||
+            !g_ssp->CopyToClientBuffer || !g_ssp->FreeClientBuffer))
+        return STATUS_NOT_SUPPORTED;
+    const auto allocateClient = useApDispatch ? g_ap->AllocateClientBuffer :
+        g_ssp->AllocateClientBuffer;
+    const auto copyToClient = useApDispatch ? g_ap->CopyToClientBuffer :
+        g_ssp->CopyToClientBuffer;
+    const auto freeClient = useApDispatch ? g_ap->FreeClientBuffer :
+        g_ssp->FreeClientBuffer;
+
+    const std::size_t serverBytes = (logonServer.size() + 1) * sizeof(wchar_t);
+    const std::size_t total = sizeof(MSV1_0_INTERACTIVE_PROFILE) + serverBytes;
+    if (total > ULONG_MAX || logonServer.size() > USHRT_MAX / sizeof(wchar_t) - 1)
+        return STATUS_INVALID_PARAMETER;
+
+    std::vector<unsigned char> local(total, 0);
+    auto* profile = reinterpret_cast<PMSV1_0_INTERACTIVE_PROFILE>(local.data());
+    profile->MessageType = MsV1_0InteractiveProfile;
+    FILETIME now{};
+    GetSystemTimeAsFileTime(&now);
+    profile->LogonTime.LowPart = now.dwLowDateTime;
+    profile->LogonTime.HighPart = static_cast<LONG>(now.dwHighDateTime);
+    profile->LogoffTime.QuadPart = MAXLONGLONG;
+    profile->KickOffTime.QuadPart = MAXLONGLONG;
+    profile->PasswordCanChange.QuadPart = 0;
+    profile->PasswordMustChange.QuadPart = MAXLONGLONG;
+
+    auto* serverText = reinterpret_cast<PWSTR>(profile + 1);
+    memcpy(serverText, logonServer.c_str(), serverBytes);
+    profile->LogonServer.Length = static_cast<USHORT>(
+        logonServer.size() * sizeof(wchar_t));
+    profile->LogonServer.MaximumLength = static_cast<USHORT>(serverBytes);
+
+    PVOID clientBuffer = nullptr;
+    NTSTATUS status = allocateClient(request,
+        static_cast<ULONG>(total), &clientBuffer);
+    if (status < 0) return status;
+
+    profile->LogonServer.Buffer = reinterpret_cast<PWSTR>(
+        static_cast<unsigned char*>(clientBuffer) + sizeof(*profile));
+    status = copyToClient(request, static_cast<ULONG>(total),
+        clientBuffer, local.data());
+    if (status < 0)
+    {
+        freeClient(request, clientBuffer);
+        return status;
+    }
+
+    *profileBuffer = clientBuffer;
+    *profileBufferSize = static_cast<ULONG>(total);
+    return STATUS_SUCCESS;
 }
 
 std::optional<std::wstring> accountNameForSid(const std::string& sidText)
@@ -454,7 +543,8 @@ NTSTATUS NTAPI LsaApCallPackagePassthrough(PLSA_CLIENT_REQUEST r, PVOID b, PVOID
     ULONG n, PVOID* out, PULONG outSize, PNTSTATUS ps)
 { return LsaApCallPackageUntrusted(r, b, base, n, out, outSize, ps); }
 
-NTSTATUS NTAPI LsaApLogonUserEx2(PLSA_CLIENT_REQUEST, SECURITY_LOGON_TYPE logonType,
+NTSTATUS NTAPI LsaApLogonUserEx2(PLSA_CLIENT_REQUEST clientRequest,
+    SECURITY_LOGON_TYPE logonType,
     PVOID auth, PVOID, ULONG authSize, PVOID* profile, PULONG profileSize,
     PLUID logonId, PNTSTATUS subStatus, PLSA_TOKEN_INFORMATION_TYPE tokenType,
     PVOID* tokenInfo, PUNICODE_STRING* accountName, PUNICODE_STRING* authority,
@@ -542,7 +632,7 @@ NTSTATUS NTAPI LsaApLogonUserEx2(PLSA_CLIENT_REQUEST, SECURITY_LOGON_TYPE logonT
     *authority = lsaString(localMachine);
     *machine = lsaString(localMachine);
     if (!*accountName || !*authority || !*machine) {
-        freeLsaHeap(*tokenInfo);
+        freeTokenInformation(static_cast<PLSA_TOKEN_INFORMATION_V2>(*tokenInfo));
         *tokenInfo = nullptr;
         *tokenType = LsaTokenInformationNull;
         CloseHandle(convertedToken);
@@ -554,11 +644,25 @@ NTSTATUS NTAPI LsaApLogonUserEx2(PLSA_CLIENT_REQUEST, SECURITY_LOGON_TYPE logonT
     // STATUS_NO_SUCH_LOGON_SESSION.
     if (!retainSessionToken(*logonId, convertedToken))
     {
-        freeLsaHeap(*tokenInfo);
+        freeTokenInformation(static_cast<PLSA_TOKEN_INFORMATION_V2>(*tokenInfo));
         *tokenInfo = nullptr;
         *tokenType = LsaTokenInformationNull;
         CloseHandle(convertedToken);
         return STATUS_NO_MEMORY;
+    }
+    status = createInteractiveProfile(clientRequest, localMachine,
+        profile, profileSize);
+    if (status < 0)
+    {
+        if (subStatus) *subStatus = status;
+        releaseSessionToken(*logonId);
+        freeTokenInformation(static_cast<PLSA_TOKEN_INFORMATION_V2>(*tokenInfo));
+        *tokenInfo = nullptr;
+        *tokenType = LsaTokenInformationNull;
+        freeLsaString(*accountName); *accountName = nullptr;
+        freeLsaString(*authority); *authority = nullptr;
+        freeLsaString(*machine); *machine = nullptr;
+        return status;
     }
     if (subStatus) *subStatus = STATUS_SUCCESS;
     return STATUS_SUCCESS;
