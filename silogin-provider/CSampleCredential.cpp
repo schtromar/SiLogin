@@ -11,6 +11,7 @@
 #include "pch.h"
 #include <unknwn.h>
 #include "CSampleCredential.h"
+#include "CSampleProvider.h"
 #include "guid.h"
 
 #include <memory>
@@ -21,6 +22,8 @@ CSampleCredential::CSampleCredential():
     _authenticationService(_logger),
     _secondFactorVerified(false),
     _useRecoveryAuthentication(false),
+    _provider(nullptr),
+    _linkSubmissionInProgress(false),
     _cRef(1),
     _pCredProvCredentialEvents(nullptr),
     _pszUserSid(nullptr),
@@ -63,16 +66,29 @@ CSampleCredential::~CSampleCredential()
     DllRelease();
 }
 
+void CSampleCredential::DetachProvider()
+{
+    _provider = nullptr;
+    _linkSubmissionInProgress = false;
+}
+
 
 // Initializes one credential with the field information passed in.
 // Set the value of the SFI_LARGE_TEXT field to pwzUsername.
 HRESULT CSampleCredential::Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus,
                                       _In_ CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR const *rgcpfd,
                                       _In_ FIELD_STATE_PAIR const *rgfsp,
-                                      _In_ ICredentialProviderUser *pcpUser)
+                                      _In_ ICredentialProviderUser *pcpUser,
+                                      _In_ CSampleProvider *provider)
 {
+    if (provider == nullptr)
+    {
+        return E_INVALIDARG;
+    }
+
     HRESULT hr = S_OK;
     _cpus = cpus;
+    _provider = provider;
 
     GUID guidProvider;
     pcpUser->GetProviderID(&guidProvider);
@@ -89,11 +105,11 @@ HRESULT CSampleCredential::Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus,
     // Initialize the String value of all the fields.
     if (SUCCEEDED(hr))
     {
-        hr = SHStrDupW(L"SiLogin credential", &_rgFieldStrings[SFI_LABEL]);
+        hr = SHStrDupW(L"SiLogin", &_rgFieldStrings[SFI_LABEL]);
     }
     if (SUCCEEDED(hr))
     {
-        hr = SHStrDupW(L"SiLogin smart-card sign-in", &_rgFieldStrings[SFI_LARGE_TEXT]);
+        hr = SHStrDupW(L"Prijava z e-osebno izkaznico", &_rgFieldStrings[SFI_LARGE_TEXT]);
     }
 
     if (SUCCEEDED(hr))
@@ -109,9 +125,9 @@ HRESULT CSampleCredential::Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus,
     {
         hr = SHStrDupW(L"", &_rgFieldStrings[SFI_SMARTCARD_PIN]);
     }
-    if (SUCCEEDED(hr) && false)
+    if (SUCCEEDED(hr))
     {
-        hr = SHStrDupW(L"Submit", &_rgFieldStrings[SFI_SUBMIT_BUTTON]);
+        hr = SHStrDupW(L"Sign in", &_rgFieldStrings[SFI_SUBMIT_BUTTON]);
     }
     if (SUCCEEDED(hr) && false)
     {
@@ -123,7 +139,7 @@ HRESULT CSampleCredential::Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus,
     }
     if (SUCCEEDED(hr))
     {
-        hr = SHStrDupW(L"Use recovery key", &_rgFieldStrings[SFI_LAUNCHWINDOW_LINK]);
+        hr = SHStrDupW(L"prijava z nadomestnim ključem", &_rgFieldStrings[SFI_LAUNCHWINDOW_LINK]);
     }
     if (SUCCEEDED(hr) && false)
     {
@@ -168,7 +184,7 @@ HRESULT CSampleCredential::Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus,
     if (SUCCEEDED(hr))
     {
         hr = SHStrDupW(
-            L"Insert your enrolled Slovenian eID card and select Sign in.",
+            L"Vsatvite osebno izkaznico.",
             &_rgFieldStrings[SFI_LOGONSTATUS_TEXT]);
     }
 
@@ -214,30 +230,49 @@ HRESULT CSampleCredential::SetSelected(_Out_ BOOL *pbAutoLogon)
         return E_INVALIDARG;
     }
 
-    // The normal smart-card path has no editable fields. Asking LogonUI to
-    // auto-logon is the supported way to invoke GetSerialization when the
-    // user selects this local-account tile.
-    *pbAutoLogon = _fIsLocalUser ? TRUE : FALSE;
+    // Selecting the tile must never start authentication. LogonUI invokes
+    // GetSerialization only after the user explicitly presses Sign in.
+    *pbAutoLogon = FALSE;
 
     _secondFactorVerified = false;
-    _useRecoveryAuthentication = false;
+    if (!_linkSubmissionInProgress)
+    {
+        _useRecoveryAuthentication = false;
+    }
 
     if (_pCredProvCredentialEvents != nullptr)
     {
         _pCredProvCredentialEvents->BeginFieldUpdates();
         _pCredProvCredentialEvents->SetFieldState(
-            this, SFI_PASSWORD, CPFS_HIDDEN);
+            this,
+            SFI_PASSWORD,
+            _useRecoveryAuthentication
+                ? CPFS_DISPLAY_IN_SELECTED_TILE
+                : CPFS_HIDDEN);
         _pCredProvCredentialEvents->SetFieldState(
-            this, SFI_SUBMIT_BUTTON, CPFS_HIDDEN);
+            this, SFI_SUBMIT_BUTTON, CPFS_DISPLAY_IN_SELECTED_TILE);
         _pCredProvCredentialEvents->SetFieldInteractiveState(
-            this, SFI_PASSWORD, CPFIS_NONE);
+            this,
+            SFI_PASSWORD,
+            _useRecoveryAuthentication ? CPFIS_FOCUSED : CPFIS_NONE);
         _pCredProvCredentialEvents->SetFieldString(
-            this, SFI_LAUNCHWINDOW_LINK, L"Use recovery key");
+            this,
+            SFI_LARGE_TEXT,
+            _useRecoveryAuthentication
+                ? L"Recovery sign-in"
+                : L"Prijava z e-osebno izkaznico");
+        _pCredProvCredentialEvents->SetFieldString(
+            this, SFI_LAUNCHWINDOW_LINK, L"prijava z nadomestnim ključem");
+        _pCredProvCredentialEvents->SetFieldSubmitButton(
+            this,
+            SFI_SUBMIT_BUTTON,
+            _useRecoveryAuthentication ? SFI_PASSWORD : SFI_LARGE_TEXT);
         _pCredProvCredentialEvents->EndFieldUpdates();
     }
 
-    return SetStatusField(
-        L"Insert your enrolled Slovenian eID card and select Sign in.");
+    return SetStatusField(_useRecoveryAuthentication
+        ? L"Insert the recovery drive and enter your Windows password."
+        : L"Insert your enrolled Slovenian eID card.");
 }
 
 // Similarly to SetSelected, LogonUI calls this when your tile was selected
@@ -245,6 +280,7 @@ HRESULT CSampleCredential::SetSelected(_Out_ BOOL *pbAutoLogon)
 // is to clear out the password field.
 HRESULT CSampleCredential::SetDeselected()
 {
+    _linkSubmissionInProgress = false;
     _secondFactorVerified = false;
     _useRecoveryAuthentication = false;
 
@@ -290,7 +326,7 @@ HRESULT CSampleCredential::SetDeselected()
     clearSecretField(SFI_SMARTCARD_PIN);
 
     SetStatusField(
-        L"Insert your enrolled Slovenian eID card and select Sign in.");
+        L"Insert your enrolled Slovenian eID card.");
 
     return hr;
 }
@@ -375,9 +411,10 @@ HRESULT CSampleCredential::GetSubmitButtonValue(DWORD dwFieldID, _Out_ DWORD *pd
 
     if (SFI_SUBMIT_BUTTON == dwFieldID)
     {
-        // pdwAdjacentTo is a pointer to the fieldID you want the submit button to
-        // appear next to.
-        *pdwAdjacentTo = SFI_PASSWORD;
+        // Keep the button anchored to a field that is visible in every mode.
+        // The password field is hidden during normal smart-card sign-in, and
+        // anchoring the button to it prevents LogonUI from rendering the button.
+        *pdwAdjacentTo = SFI_LARGE_TEXT;
         hr = S_OK;
     }
     else
@@ -545,6 +582,19 @@ HRESULT CSampleCredential::CommandLinkClicked(DWORD dwFieldID)
     {
         switch (dwFieldID)
         {
+        case SFI_LARGE_TEXT:
+            if (_provider == nullptr)
+            {
+                return E_UNEXPECTED;
+            }
+
+            _linkSubmissionInProgress = true;
+            hr = _provider->RequestSubmit(this);
+            if (FAILED(hr))
+            {
+                _linkSubmissionInProgress = false;
+            }
+            break;
         case SFI_LAUNCHWINDOW_LINK:
             _useRecoveryAuthentication = !_useRecoveryAuthentication;
             _secondFactorVerified = false;
@@ -561,25 +611,35 @@ HRESULT CSampleCredential::CommandLinkClicked(DWORD dwFieldID)
                 _pCredProvCredentialEvents->SetFieldState(
                     this,
                     SFI_SUBMIT_BUTTON,
-                    _useRecoveryAuthentication
-                        ? CPFS_DISPLAY_IN_SELECTED_TILE
-                        : CPFS_HIDDEN);
+                    CPFS_DISPLAY_IN_SELECTED_TILE);
                 _pCredProvCredentialEvents->SetFieldInteractiveState(
                     this,
                     SFI_PASSWORD,
                     _useRecoveryAuthentication ? CPFIS_FOCUSED : CPFIS_NONE);
                 _pCredProvCredentialEvents->SetFieldString(
                     this,
+                    SFI_LARGE_TEXT,
+                    _useRecoveryAuthentication
+                        ? L"Recovery sign-in"
+                        : L"Sign in with Slovenian eID");
+                _pCredProvCredentialEvents->SetFieldString(
+                    this,
                     SFI_LAUNCHWINDOW_LINK,
                     _useRecoveryAuthentication
-                        ? L"Use smart card"
-                        : L"Use recovery key");
+                        ? L"Use Slovenian eID card instead"
+                        : L"Use a recovery key instead");
+                _pCredProvCredentialEvents->SetFieldSubmitButton(
+                    this,
+                    SFI_SUBMIT_BUTTON,
+                    _useRecoveryAuthentication
+                        ? SFI_PASSWORD
+                        : SFI_LARGE_TEXT);
                 _pCredProvCredentialEvents->EndFieldUpdates();
             }
 
             SetStatusField(_useRecoveryAuthentication
-                ? L"Insert the recovery drive, enter the Windows password, and select Sign in."
-                : L"Insert your enrolled Slovenian eID card and select Sign in.");
+                ? L"Insert the recovery drive and enter your Windows password."
+                : L"Insert your enrolled Slovenian eID card.");
             break;
         case SFI_HIDECONTROLS_LINK:
             _pCredProvCredentialEvents->BeginFieldUpdates();
@@ -799,6 +859,7 @@ HRESULT CSampleCredential::GetSerialization(_Out_ CREDENTIAL_PROVIDER_GET_SERIAL
                                             _Outptr_result_maybenull_ PWSTR *ppwszOptionalStatusText,
                                             _Out_ CREDENTIAL_PROVIDER_STATUS_ICON *pcpsiOptionalStatusIcon)
 {
+    _linkSubmissionInProgress = false;
     HRESULT hr = E_UNEXPECTED;
     *pcpgsr = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
     *ppwszOptionalStatusText = nullptr;

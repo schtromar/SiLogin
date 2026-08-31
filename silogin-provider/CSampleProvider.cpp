@@ -18,6 +18,8 @@
 #include "guid.h"
 #include "../libsilogin/IdentityStore.h"
 
+#include <algorithm>
+
 namespace
 {
     std::string SidToUtf8(PCWSTR sid)
@@ -39,7 +41,10 @@ CSampleProvider::CSampleProvider():
     _cRef(1),
     _fRecreateEnumeratedCredentials(true),
     _cpus(CPUS_INVALID),
-    _pCredProviderUserArray(nullptr)
+    _pCredProviderUserArray(nullptr),
+    _pCredProviderEvents(nullptr),
+    _upAdviseContext(0),
+    _pendingSubmitCredential(nullptr)
 {
     DllAddRef();
 }
@@ -51,6 +56,11 @@ CSampleProvider::~CSampleProvider()
     {
         _pCredProviderUserArray->Release();
         _pCredProviderUserArray = nullptr;
+    }
+    if (_pCredProviderEvents != nullptr)
+    {
+        _pCredProviderEvents->Release();
+        _pCredProviderEvents = nullptr;
     }
 
     DllRelease();
@@ -117,16 +127,38 @@ HRESULT CSampleProvider::SetSerialization(
 // Called by LogonUI to give you a callback.  Providers often use the callback if they
 // some event would cause them to need to change the set of tiles that they enumerated.
 HRESULT CSampleProvider::Advise(
-    _In_ ICredentialProviderEvents * /*pcpe*/,
-    _In_ UINT_PTR /*upAdviseContext*/)
+    _In_ ICredentialProviderEvents *pcpe,
+    _In_ UINT_PTR upAdviseContext)
 {
-    return E_NOTIMPL;
+    if (pcpe == nullptr)
+    {
+        return E_INVALIDARG;
+    }
+
+    if (_pCredProviderEvents != nullptr)
+    {
+        _pCredProviderEvents->Release();
+    }
+
+    _pCredProviderEvents = pcpe;
+    _pCredProviderEvents->AddRef();
+    _upAdviseContext = upAdviseContext;
+    return S_OK;
 }
 
 // Called by LogonUI when the ICredentialProviderEvents callback is no longer valid.
 HRESULT CSampleProvider::UnAdvise()
 {
-    return E_NOTIMPL;
+    _pendingSubmitCredential = nullptr;
+    _upAdviseContext = 0;
+
+    if (_pCredProviderEvents != nullptr)
+    {
+        _pCredProviderEvents->Release();
+        _pCredProviderEvents = nullptr;
+    }
+
+    return S_OK;
 }
 
 // Called by LogonUI to determine the number of fields in your tiles.  This
@@ -187,6 +219,24 @@ HRESULT CSampleProvider::GetCredentialCount(
 
     *pdwCount = static_cast<DWORD>(_credentials.size());
 
+    if (_pendingSubmitCredential != nullptr)
+    {
+        const auto requested = std::find(
+            _credentials.begin(),
+            _credentials.end(),
+            _pendingSubmitCredential);
+
+        if (requested != _credentials.end())
+        {
+            *pdwDefault = static_cast<DWORD>(
+                std::distance(_credentials.begin(), requested));
+            *pbAutoLogonWithDefault = TRUE;
+        }
+
+        // A command-link click authorizes exactly one submission attempt.
+        _pendingSubmitCredential = nullptr;
+    }
+
     return S_OK;
 }
 
@@ -220,6 +270,31 @@ HRESULT CSampleProvider::SetUserArray(_In_ ICredentialProviderUserArray *users)
     return S_OK;
 }
 
+HRESULT CSampleProvider::RequestSubmit(
+    _In_ CSampleCredential *credential)
+{
+    if (credential == nullptr || _pCredProviderEvents == nullptr)
+    {
+        return E_UNEXPECTED;
+    }
+
+    if (std::find(_credentials.begin(), _credentials.end(), credential) ==
+        _credentials.end())
+    {
+        return E_INVALIDARG;
+    }
+
+    _pendingSubmitCredential = credential;
+    const HRESULT hr = _pCredProviderEvents->CredentialsChanged(
+        _upAdviseContext);
+    if (FAILED(hr))
+    {
+        _pendingSubmitCredential = nullptr;
+    }
+
+    return hr;
+}
+
 void CSampleProvider::_CreateEnumeratedCredentials()
 {
     switch (_cpus)
@@ -237,8 +312,10 @@ void CSampleProvider::_CreateEnumeratedCredentials()
 
 void CSampleProvider::_ReleaseEnumeratedCredentials()
 {
+    _pendingSubmitCredential = nullptr;
     for (CSampleCredential* credential : _credentials)
     {
+        credential->DetachProvider();
         credential->Release();
     }
     _credentials.clear();
@@ -281,7 +358,7 @@ HRESULT CSampleProvider::_EnumerateCredentials()
         CSampleCredential* credential = new(std::nothrow) CSampleCredential();
         if (credential == nullptr) { user->Release(); return E_OUTOFMEMORY; }
         hr = credential->Initialize(_cpus, s_rgCredProvFieldDescriptors,
-            s_rgFieldStatePairs, user);
+            s_rgFieldStatePairs, user, this);
         user->Release();
         if (FAILED(hr)) { credential->Release(); return hr; }
         try { _credentials.push_back(credential); }

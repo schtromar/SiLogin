@@ -28,6 +28,8 @@
 
 #include <memory>
 
+class CSampleProvider;
+
 class CSampleCredential : public ICredentialProviderCredential2, ICredentialProviderCredentialWithFieldOptions
 {
 public:
@@ -103,10 +105,15 @@ public:
     HRESULT Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus,
                        _In_ CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR const *rgcpfd,
                        _In_ FIELD_STATE_PAIR const *rgfsp,
-                       _In_ ICredentialProviderUser *pcpUser);
+                       _In_ ICredentialProviderUser *pcpUser,
+                       _In_ CSampleProvider *provider);
     CSampleCredential();
 
   private:
+    friend class CSampleProvider;
+
+    void DetachProvider();
+
     HRESULT SetStatusField(
         PCWSTR text);
 
@@ -124,6 +131,8 @@ public:
     AuthenticationService                   _authenticationService;
     bool                                    _secondFactorVerified;
     bool                                    _useRecoveryAuthentication;
+    CSampleProvider                         *_provider;
+    bool                                    _linkSubmissionInProgress;
 
     long                                    _cRef;
     CREDENTIAL_PROVIDER_USAGE_SCENARIO      _cpus;                                          // The usage scenario for which we were enumerated.

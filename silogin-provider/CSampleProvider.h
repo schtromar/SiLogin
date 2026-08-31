@@ -64,6 +64,8 @@ class CSampleProvider : public ICredentialProvider,
 
     IFACEMETHODIMP SetUserArray(_In_ ICredentialProviderUserArray *users);
 
+    HRESULT RequestSubmit(_In_ CSampleCredential *credential);
+
     friend HRESULT CSample_CreateInstance(_In_ REFIID riid, _Outptr_ void** ppv);
 
   protected:
@@ -80,5 +82,8 @@ private:
     bool                                    _fRecreateEnumeratedCredentials;
     CREDENTIAL_PROVIDER_USAGE_SCENARIO      _cpus;
     ICredentialProviderUserArray            *_pCredProviderUserArray;
+    ICredentialProviderEvents               *_pCredProviderEvents;
+    UINT_PTR                                _upAdviseContext;
+    CSampleCredential                       *_pendingSubmitCredential;
 
 };
